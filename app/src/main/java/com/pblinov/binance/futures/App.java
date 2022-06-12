@@ -5,24 +5,24 @@ package com.pblinov.binance.futures;
 
 import com.pblinov.binance.futures.api.BinanceExchange;
 import com.pblinov.binance.futures.api.Exchange;
-import com.pblinov.binance.futures.api.dto.OrderType;
+import com.pblinov.binance.futures.api.dto.ExecutionType;
 import com.pblinov.binance.futures.api.dto.OrderUpdateEvent;
-import com.pblinov.binance.futures.api.dto.Side;
-import com.pblinov.binance.futures.api.dto.TimeInForce;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.IOException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import static com.pblinov.binance.futures.api.dto.OrderType.LIMIT;
+import static com.pblinov.binance.futures.api.dto.Side.SELL;
+import static com.pblinov.binance.futures.api.dto.TimeInForce.GTC;
 
 @Slf4j
 public class App {
 
     public static final String SYMBOL = "BTCUSDT";
+    private static final CountDownLatch latch = new CountDownLatch(1);
 
     public static void main(String[] args) throws Exception {
         log.info("Start");
@@ -37,24 +37,29 @@ public class App {
         if (exchange.ping()) {
             log.info("REST API is available");
             exchange.connect();
-            onExchangeConnect(exchange);
+            log.info("Time difference: {}ms", System.currentTimeMillis() - ((Exchange) exchange).timestamp());
+            var orderId = Long.toString(System.currentTimeMillis());
+            exchange.placeOrder(SYMBOL, orderId, LIMIT, SELL, 0.01, 28700.0, GTC);
+            log.info("Order: {}", exchange.queryOrder(SYMBOL, orderId));
+            exchange.cancelOrder(SYMBOL, orderId);
 
-            Thread.sleep(Duration.ofMinutes(10).toMillis());
+            if (!latch.await(Duration.ofSeconds(10).toMillis(), TimeUnit.MILLISECONDS)) {
+                log.error("Orders hasn't cancelled in timeout");
+            }
 
             exchange.stop();
+        } else {
+            log.error("Exchange is unavailable");
         }
         log.info("Stop");
     }
 
-    private static void onExchangeConnect(Exchange exchange) throws IOException, ExecutionException, InterruptedException, TimeoutException, NoSuchAlgorithmException, InvalidKeyException {
-        log.info("Time difference: {}ms", System.currentTimeMillis() - exchange.timestamp());
-        exchange.placeOrder(SYMBOL, OrderType.LIMIT, Side.SELL, 0.01, 28700.0, TimeInForce.GTC);
-    }
-
     @SneakyThrows
     private static void onOrderUpdate(Exchange exchange, OrderUpdateEvent orderUpdate) {
-        log.info("On order update: {}", orderUpdate);
-        exchange.queryOrder(SYMBOL, orderUpdate.getPayload().getClientOrderId());
-        exchange.cancelOrder();
+        var payload = orderUpdate.getPayload();
+        log.info("Order with ID={} has status {}({})", payload.getClientOrderId(), payload.getOrderStatus(), payload.getExecutionType());
+        if (payload.getExecutionType() == ExecutionType.CANCELED) {
+            latch.countDown();
+        }
     }
 }

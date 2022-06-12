@@ -11,13 +11,13 @@ import org.eclipse.jetty.websocket.api.WebSocketListener;
 import java.time.Duration;
 
 @Slf4j
-public class BinanceWSListener implements WebSocketListener {
+class BinanceWebSocketListener implements WebSocketListener {
     private final ObjectMapper mapper = new ObjectMapper();
     private final EventListener eventListener;
     private final Exchange exchange;
     private final String exchangeName;
 
-    public BinanceWSListener(String exchangeName, Exchange exchange, EventListener eventListener) {
+    public BinanceWebSocketListener(String exchangeName, Exchange exchange, EventListener eventListener) {
         this.exchangeName = exchangeName;
         this.exchange = exchange;
         this.eventListener = eventListener;
@@ -41,7 +41,7 @@ public class BinanceWSListener implements WebSocketListener {
 
     @Override
     public void onWebSocketText(String message) {
-        log.info("[{}] WS message: {}", exchangeName, message);
+        log.debug("[{}] WS message: {}", exchangeName, message);
         try {
             var event = mapper.readValue(message, Event.class);
             if (event instanceof OrderUpdateEvent) {

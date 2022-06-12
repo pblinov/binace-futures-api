@@ -2,6 +2,7 @@ package com.pblinov.binance.futures.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pblinov.binance.futures.api.dto.*;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.ContentResponse;
@@ -30,7 +31,7 @@ public class BinanceExchange implements Exchange {
     private final String apiSecret;
     private final HttpClient httpClient;
     private final WebSocketClient webSocketClient;
-    private final BinanceWSListener wsListener;
+    private final BinanceWebSocketListener wsListener;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public BinanceExchange(String httpUrl, String wsUrl, String apiKey, String apiSecret, EventListener eventListener) {
@@ -38,7 +39,7 @@ public class BinanceExchange implements Exchange {
         this.wsUrl = wsUrl;
         this.apiKey = apiKey;
         this.apiSecret = apiSecret;
-        this.wsListener = new BinanceWSListener(EXCHANGE_NAME, this, eventListener);
+        this.wsListener = new BinanceWebSocketListener(EXCHANGE_NAME, this, eventListener);
         httpClient = new HttpClient();
         webSocketClient = new WebSocketClient(httpClient);
         webSocketClient.setMaxTextMessageSize(8 * 1024); // TODO: Move to settings
@@ -53,15 +54,16 @@ public class BinanceExchange implements Exchange {
     }
 
     @Override
-    public boolean ping() throws ExecutionException, InterruptedException, TimeoutException {
-        // exchangeInfo
-        log.info("[{}] Ping", EXCHANGE_NAME);
+    @SneakyThrows
+    public boolean ping() {
+        log.debug("[{}] Ping", EXCHANGE_NAME);
         return get("/ping").getStatus() == 200;
     }
 
     @Override
-    public long timestamp() throws ExecutionException, InterruptedException, TimeoutException, IOException {
-        log.info("[{}] Timestamp", EXCHANGE_NAME);
+    @SneakyThrows
+    public long timestamp() {
+        log.debug("[{}] Timestamp", EXCHANGE_NAME);
         var response = get("/time");
         if (response.getStatus() == 200) {
             return mapper.readValue(response.getContent(), TimestampResponse.class).getServerTime();
@@ -74,29 +76,82 @@ public class BinanceExchange implements Exchange {
      * POST /fapi/v1/order (HMAC SHA256)
      */
     @Override
-    public void placeOrder(String symbol, OrderType type, Side side, double qty, double price, TimeInForce tif) throws ExecutionException, InterruptedException, TimeoutException, NoSuchAlgorithmException, InvalidKeyException {
-        log.info("[{}] Place order", EXCHANGE_NAME);
+    @SneakyThrows
+    public void placeOrder(String symbol, String clientOrderId, OrderType type, Side side, double qty, double price, TimeInForce tif) {
+        log.info("[{}] Place order with ID: {}", EXCHANGE_NAME, clientOrderId);
 
-        var response = send(httpClient.newRequest(createUri("/order"))
+        var response = sendWithTimestamp(httpClient.newRequest(createUri("/order"))
                 .method(HttpMethod.POST)
                 .param("symbol", symbol)
+                .param("newClientOrderId", clientOrderId)
                 .param("side", Objects.toString(side))
                 .param("type", Objects.toString(type))
                 .param("quantity", Objects.toString(qty))
                 .param("price", Objects.toString(price))
-                .param("timeInForce", Objects.toString(tif))
-                .param("recvWindow", Objects.toString(10_000))
-                .param("timestamp", Objects.toString(System.currentTimeMillis() - 5_000))); //TODO: Add timestamp correction to settings
+                .param("timeInForce", Objects.toString(tif)));
 
         if (response.getStatus() != 200) {
-            log.warn("[{}] Response: {}", EXCHANGE_NAME, response.getContentAsString());
+            log.warn("[{}] Place order response: {}", EXCHANGE_NAME, response.getContentAsString());
             throw new IllegalStateException("Cannot place order");
         } else {
-            log.info("[{}] Response: {}", EXCHANGE_NAME, response.getContentAsString());
+            log.debug("[{}] Place order response: {}", EXCHANGE_NAME, response.getContentAsString());
         }
     }
 
-    private ContentResponse send(Request request) throws InterruptedException, TimeoutException, ExecutionException, NoSuchAlgorithmException, InvalidKeyException {
+    /**
+     * GET /fapi/v1/order (HMAC SHA256)
+     */
+    @Override
+    @SneakyThrows
+    public Order queryOrder(String symbol, String clientOrderId) {
+        log.info("[{}] Query order with ID: {}", EXCHANGE_NAME, clientOrderId);
+
+        var response = sendWithTimestamp(httpClient.newRequest(createUri("/order"))
+                .method(HttpMethod.GET)
+                .param("symbol", symbol)
+                .param("origClientOrderId", clientOrderId));
+
+        if (response.getStatus() != 200) {
+            log.warn("[{}] Query order response: {}", EXCHANGE_NAME, response.getContentAsString());
+            throw new IllegalStateException("Cannot get order details");
+        } else {
+            log.debug("[{}] Query order response: {}", EXCHANGE_NAME, response.getContentAsString());
+            // {"orderId":3046231366,"symbol":"BTCUSDT","status":"NEW","clientOrderId":"Lt2LC3grCRzxJfc6MZf1IF","price":"28700","avgPrice":"0.00000","origQty":"0.010","executedQty":"0","cumQuote":"0","timeInForce":"GTC","type":"LIMIT","reduceOnly":false,"closePosition":false,"side":"SELL","positionSide":"BOTH","stopPrice":"0","workingType":"CONTRACT_PRICE","priceProtect":false,"origType":"LIMIT","time":1654987000652,"updateTime":1654987000652}
+            return mapper.readValue(response.getContent(), Order.class);
+        }
+    }
+
+    /**
+     * DELETE /fapi/v1/order (HMAC SHA256)
+     */
+    @Override
+    @SneakyThrows
+    public void cancelOrder(String symbol, String clientOrderId) {
+        log.info("[{}] Cancel order with ID: {}", EXCHANGE_NAME, clientOrderId);
+        var response = sendWithTimestamp(httpClient.newRequest(createUri("/order"))
+                .method(HttpMethod.DELETE)
+                .param("symbol", symbol)
+                .param("origClientOrderId", clientOrderId));
+
+        if (response.getStatus() != 200) {
+            log.warn("[{}] Cancel order response: {}", EXCHANGE_NAME, response.getContentAsString());
+            throw new IllegalStateException("Cannot cancel order");
+        } else {
+            log.debug("[{}] Cancel order response: {}", EXCHANGE_NAME, response.getContentAsString());
+        }
+    }
+
+    private ContentResponse sendWithTimestamp(Request request) throws InterruptedException, TimeoutException, ExecutionException, NoSuchAlgorithmException, InvalidKeyException {
+        return sendWithSignature(withTimestamp(request));
+    }
+
+    private Request withTimestamp(Request request) {
+        return request
+                .param("recvWindow", Objects.toString(15_000))
+                .param("timestamp", Objects.toString(System.currentTimeMillis() - 10_000)); //TODO: Add timestamp correction to settings
+    }
+
+    private ContentResponse sendWithSignature(Request request) throws InterruptedException, TimeoutException, ExecutionException, NoSuchAlgorithmException, InvalidKeyException {
         return request
                 .param("signature", SignatureUtils.sign(request.getQuery(), apiSecret))
                 .headers(this::authHeaders)
@@ -105,38 +160,6 @@ public class BinanceExchange implements Exchange {
 
     private void authHeaders(HttpFields.Mutable headers) {
         headers.put(API_KEY_HEADER, apiKey);
-    }
-
-    /**
-     * GET /fapi/v1/order (HMAC SHA256)
-     */
-    @Override
-    public void queryOrder(String symbol, String clientOrderId) throws NoSuchAlgorithmException, ExecutionException, InvalidKeyException, InterruptedException, TimeoutException {
-        log.info("[{}] Query order with ID: {}", EXCHANGE_NAME, clientOrderId);
-
-        var response = send(httpClient.newRequest(createUri("/order"))
-                .method(HttpMethod.GET)
-                .param("symbol", symbol)
-                .param("origClientOrderId", clientOrderId)
-                .param("recvWindow", Objects.toString(10_000))
-                .param("timestamp", Objects.toString(System.currentTimeMillis() - 5_000))); //TODO: Add timestamp correction to settings
-
-        if (response.getStatus() != 200) {
-            log.warn("[{}] Response: {}", EXCHANGE_NAME, response.getContentAsString());
-            throw new IllegalStateException("Cannot get order details");
-        } else {
-            log.info("[{}] Response: {}", EXCHANGE_NAME, response.getContentAsString());
-            // {"orderId":3046231366,"symbol":"BTCUSDT","status":"NEW","clientOrderId":"Lt2LC3grCRzxJfc6MZf1IF","price":"28700","avgPrice":"0.00000","origQty":"0.010","executedQty":"0","cumQuote":"0","timeInForce":"GTC","type":"LIMIT","reduceOnly":false,"closePosition":false,"side":"SELL","positionSide":"BOTH","stopPrice":"0","workingType":"CONTRACT_PRICE","priceProtect":false,"origType":"LIMIT","time":1654987000652,"updateTime":1654987000652}
-        }
-    }
-
-    /**
-     * DELETE /fapi/v1/order (HMAC SHA256)
-     */
-    @Override
-    public void cancelOrder() {
-        log.info("[{}] Cancel order", EXCHANGE_NAME);
-        //TODO: Implement
     }
 
     private ContentResponse get(String path) throws ExecutionException, InterruptedException, TimeoutException {

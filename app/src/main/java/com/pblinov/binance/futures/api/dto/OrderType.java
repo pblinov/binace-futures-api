@@ -1,5 +1,9 @@
 package com.pblinov.binance.futures.api.dto;
 
 public enum OrderType {
-    LIMIT
+    MARKET,
+    LIMIT,
+    STOP,
+    TAKE_PROFIT,
+    LIQUIDATION
 }

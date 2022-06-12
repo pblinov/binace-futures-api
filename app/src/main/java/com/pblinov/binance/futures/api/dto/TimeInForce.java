@@ -1,5 +1,8 @@
 package com.pblinov.binance.futures.api.dto;
 
 public enum TimeInForce {
-    GTC
+    GTC,
+    IOC,
+    FOK,
+    GTX
 }

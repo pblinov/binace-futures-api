@@ -24,6 +24,10 @@ public class OrderUpdateEvent extends Event {
         private OrderType orderType;
         @JsonProperty("f")
         private TimeInForce timeInForce;
+        @JsonProperty("x")
+        private ExecutionType executionType;
+        @JsonProperty("X")
+        private OrderStatus orderStatus;
 
         /**
          * Original Price.
