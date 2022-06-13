@@ -147,8 +147,8 @@ public class BinanceExchange implements Exchange {
 
     private Request withTimestamp(Request request) {
         return request
-                .param("recvWindow", Objects.toString(15_000))
-                .param("timestamp", Objects.toString(System.currentTimeMillis() - 10_000)); //TODO: Add timestamp correction to settings
+                .param("recvWindow", Objects.toString(30_000))
+                .param("timestamp", Objects.toString(System.currentTimeMillis() - 15_000)); //TODO: Add timestamp correction to settings
     }
 
     private ContentResponse sendWithSignature(Request request) throws InterruptedException, TimeoutException, ExecutionException, NoSuchAlgorithmException, InvalidKeyException {

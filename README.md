@@ -12,6 +12,10 @@ REST requests:
 WS:
 - Receive updates from WS
 
+## Run application
+- Use **com.pblinov.binance.futures.App** to run application
+- Main logic in **com.pblinov.binance.futures.api.BinanceExchange**
+
 ## Endpoints
 * The base API endpoint is: https://fapi.binance.com
 * The REST baseurl for testnet is https://testnet.binancefuture.com
