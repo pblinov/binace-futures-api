@@ -3,6 +3,7 @@
  */
 package com.pblinov.binance.futures;
 
+import com.pblinov.binance.futures.api.BinanceConfig;
 import com.pblinov.binance.futures.api.BinanceExchange;
 import com.pblinov.binance.futures.api.Exchange;
 import com.pblinov.binance.futures.api.dto.ExecutionType;
@@ -27,10 +28,13 @@ public class App {
     public static void main(String[] args) throws Exception {
         log.info("Start");
 
-        var exchange = new BinanceExchange("https://testnet.binancefuture.com",
-                "wss://stream.binancefuture.com",
-                "2001bb6af62d27c7993730801dd9dab763bd6f6c4e1a736331861b7c30b8e950",
-                "802990f5ee6ffa2491f8dabf2c3fcf10edae15a71eaaa74b482586d26ef87890",
+        var exchange = new BinanceExchange(BinanceConfig.builder()
+                .exchangeName("Binance Futures")
+                .httpUrl("https://testnet.binancefuture.com")
+                .wsUrl("wss://stream.binancefuture.com")
+                .apiKey("2001bb6af62d27c7993730801dd9dab763bd6f6c4e1a736331861b7c30b8e950")
+                .apiSecret("802990f5ee6ffa2491f8dabf2c3fcf10edae15a71eaaa74b482586d26ef87890")
+                .build(),
                 App::onOrderUpdate);
 
         exchange.start();
@@ -55,7 +59,7 @@ public class App {
     }
 
     @SneakyThrows
-    private static void onOrderUpdate(Exchange exchange, OrderUpdateEvent orderUpdate) {
+    private static void onOrderUpdate(OrderUpdateEvent orderUpdate) {
         var payload = orderUpdate.getPayload();
         log.info("Order with ID={} has status {}({})", payload.getClientOrderId(), payload.getOrderStatus(), payload.getExecutionType());
         if (payload.getExecutionType() == ExecutionType.CANCELED) {

@@ -14,5 +14,5 @@ public interface Exchange {
 
     Order queryOrder(String symbol, String clientOrderId);
 
-    void cancelOrder(String symbol, String clientOrderId);
+    Order cancelOrder(String symbol, String clientOrderId);
 }
